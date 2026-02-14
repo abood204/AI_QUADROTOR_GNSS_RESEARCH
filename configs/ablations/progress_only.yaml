@@ -1,0 +1,6 @@
+# Reward ablation: progress-only baseline
+# Tests minimal reward signal: only forward motion, no collision or smoothness penalties
+
+w_progress: 0.5
+w_collision: 0.0
+w_smoothness: 0.0

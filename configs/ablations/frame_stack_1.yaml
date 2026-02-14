@@ -1,0 +1,6 @@
+# Observation ablation: single-frame depth
+# Tests effect of temporal history in state representation
+# Used with: python -m src.training.train --config configs/train_ppo.yaml
+# Override by merging this into base config at runtime
+
+frame_stack: 1

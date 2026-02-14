@@ -1,0 +1,8 @@
+# Domain randomization ablation: disabled
+# Baseline control to quantify DR contribution to generalization
+# Trains only on nominal simulation parameters
+
+domain_randomization:
+  enabled: false
+  depth_noise_std: 0.0
+  spawn_radius_m: 0.0

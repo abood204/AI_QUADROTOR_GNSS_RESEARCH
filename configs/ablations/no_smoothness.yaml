@@ -1,0 +1,6 @@
+# Reward ablation: disabled smoothness penalty
+# Tests whether action smoothness regularization improves policy quality
+
+w_progress: 0.5
+w_collision: -100.0
+w_smoothness: 0.0
