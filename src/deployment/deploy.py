@@ -2,8 +2,8 @@
 Deploy a trained PPO policy on the AirSim Quadrotor.
 
 Usage:
-    python -m src.rl.deploy_ppo --model logs/ppo/ppo_*/final_model.zip
-    python -m src.rl.deploy_ppo --model logs/ppo/ppo_*/final_model.zip --duration_s 30
+    python -m src.deployment.deploy --model logs/ppo/best_model/best_model.zip
+    python -m src.deployment.deploy --model logs/ppo/best_model/best_model.zip --duration_s 30
 """
 
 import argparse
@@ -14,7 +14,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
-from src.rl.env_airsim import AirSimDroneEnv
+from src.environments.airsim_env import AirSimDroneEnv
 
 
 def make_env(cfg: dict):
@@ -30,7 +30,7 @@ def main():
         help="Path to trained model .zip",
     )
     parser.add_argument(
-        "--config", type=str, default="configs/rl_ppo.yaml",
+        "--config", type=str, default="configs/train_ppo.yaml",
         help="Path to YAML config (must match training config)",
     )
     parser.add_argument(

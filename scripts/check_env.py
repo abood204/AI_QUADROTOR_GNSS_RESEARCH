@@ -1,4 +1,4 @@
-from src.rl.env_airsim import AirSimDroneEnv
+from src.environments.airsim_env import AirSimDroneEnv
 from stable_baselines3.common.env_checker import check_env
 
 def main():

@@ -2,8 +2,8 @@
 Train a PPO agent on the AirSim Quadrotor environment.
 
 Usage:
-    python -m src.rl.train_ppo --config configs/rl_ppo.yaml
-    python -m src.rl.train_ppo --config configs/rl_ppo.yaml --total_timesteps 4096
+    python -m src.training.train --config configs/train_ppo.yaml
+    python -m src.training.train --config configs/train_ppo.yaml --total_timesteps 4096
 """
 
 import argparse
@@ -16,7 +16,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
-from src.rl.env_airsim import AirSimDroneEnv
+from src.environments.airsim_env import AirSimDroneEnv
 
 
 def make_env(cfg: dict):
@@ -29,7 +29,7 @@ def make_env(cfg: dict):
 def main():
     parser = argparse.ArgumentParser(description="Train PPO on AirSim")
     parser.add_argument(
-        "--config", type=str, default="configs/rl_ppo.yaml",
+        "--config", type=str, default="configs/train_ppo.yaml",
         help="Path to YAML config",
     )
     parser.add_argument(

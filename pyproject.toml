@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gnss-denied-quad"
+version = "0.1.0"
+description = "GNSS-Denied Quadrotor Autonomy via Reinforcement Learning"
+requires-python = ">=3.11"
+dependencies = [
+    "airsim==1.8.1",
+    "gymnasium>=0.29.1",
+    "stable-baselines3>=2.3.0",
+    "torch>=2.1.0",
+    "numpy>=1.26.0",
+    "opencv-contrib-python>=4.8.0",
+    "pyyaml>=6.0",
+    "tensorboard>=2.15.0",
+    "matplotlib>=3.8.0",
+    "msgpack-rpc-python>=0.4.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

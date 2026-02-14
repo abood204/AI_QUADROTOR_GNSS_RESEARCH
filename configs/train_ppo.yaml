@@ -1,5 +1,5 @@
 # PPO Reinforcement Learning Configuration
-# Usage: python -m src.rl.train_ppo --config configs/rl_ppo.yaml
+# Usage: python -m src.training.train --config configs/train_ppo.yaml
 
 env:
   ip: ""                    # AirSim IP (empty = localhost)

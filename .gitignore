@@ -31,6 +31,9 @@ logs/
 # PDFs (kept locally, not in git)
 *.pdf
 
+# Experiment tracking
+wandb/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -1,15 +1,15 @@
 """
 Full autonomous navigation test with trajectory logging.
 
-Runs a trained PPO policy (with PretrainedCombinedExtractor) deterministically,
-recording position, velocity, and reward at each step. Outputs:
+Runs a trained PPO policy deterministically, recording position,
+velocity, and reward at each step. Outputs:
   - trajectory.csv: per-step telemetry
   - summary.json: aggregate metrics
   - trajectory.png: 2D bird's-eye plot
 
 Usage:
-    python -m src.rl.test_full_nav --model logs/ppo/ppo_pretrained_*/best_model/best_model.zip
-    python -m src.rl.test_full_nav --model logs/ppo/ppo_pretrained_*/best_model/best_model.zip --max_time_s 120
+    python -m src.evaluation.evaluate --model logs/ppo/best_model/best_model.zip
+    python -m src.evaluation.evaluate --model logs/ppo/best_model/best_model.zip --max_time_s 120
 """
 
 import argparse
@@ -25,8 +25,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
-from src.rl.env_airsim import AirSimDroneEnv
-from src.rl.train_ppo_pretrained import PretrainedCombinedExtractor
+from src.environments.airsim_env import AirSimDroneEnv
 
 
 def make_env(cfg: dict):
@@ -42,7 +41,7 @@ def main():
         help="Path to trained model .zip",
     )
     parser.add_argument(
-        "--config", type=str, default="configs/rl_ppo_pretrained.yaml",
+        "--config", type=str, default="configs/train_ppo.yaml",
         help="Path to YAML config",
     )
     parser.add_argument(
@@ -73,20 +72,8 @@ def main():
     vec_env = DummyVecEnv([make_env(cfg)])
     vec_env = VecFrameStack(vec_env, n_stack=frame_stack, channels_order="last")
 
-    # Load model — must pass custom_objects for the pretrained extractor
-    model = PPO.load(
-        args.model,
-        env=vec_env,
-        custom_objects={
-            "policy_kwargs": {
-                "features_extractor_class": PretrainedCombinedExtractor,
-                "features_extractor_kwargs": {
-                    "pretrained_path": "",  # Weights already in the .zip
-                    "freeze_blocks": 3,
-                },
-            }
-        },
-    )
+    # Load trained model
+    model = PPO.load(args.model, env=vec_env)
 
     # Access underlying AirSim client
     raw_env = vec_env.envs[0].env  # Monitor wraps AirSimDroneEnv
