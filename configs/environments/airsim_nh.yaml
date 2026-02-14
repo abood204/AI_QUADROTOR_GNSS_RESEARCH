@@ -1,0 +1,17 @@
+# AirSimNH (Neighborhood) environment configuration
+# Outdoor environment with houses, streets, trees
+
+env:
+  ip: ""
+  image_shape: [84, 84, 1]
+  target_alt: 3.0
+  max_vx: 3.0
+  max_vy: 1.0
+  max_yaw_rate_deg: 45
+  dt: 0.1
+  max_steps: 1024
+  depth_clip_m: 20.0
+
+domain_randomization:
+  enabled: false
+  depth_noise_std: 0.0

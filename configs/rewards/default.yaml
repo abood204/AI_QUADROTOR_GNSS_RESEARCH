@@ -1,0 +1,6 @@
+# Default reward configuration
+# Used by src.environments.rewards.RewardFunction
+
+w_progress: 0.5        # Weight for forward velocity reward (vx_body)
+w_collision: -100.0    # Terminal penalty on collision
+w_smoothness: -0.1     # Penalty for action jerk ||a_t - a_{t-1}||

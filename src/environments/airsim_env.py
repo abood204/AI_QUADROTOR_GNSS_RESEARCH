@@ -1,25 +1,29 @@
-import airsim
-import gymnasium as gym
-from gymnasium import spaces
-import numpy as np
-import cv2
+"""Gymnasium environment for AirSim Quadrotor RL training.
+
+Observation (Dict):
+    - image: Depth (H, W, 1) normalised to [0, 1]
+    - velocity: [vx, vy, yaw_rate] in body frame
+
+Action (Box[-1, 1]):
+    - [target_vx, target_vy, target_yaw_rate] scaled to physical limits
+
+Uses simContinueForTime for lockstep simulation stepping (no wall-clock
+sleeps) and moveByVelocityZBodyFrameAsync for active altitude hold.
+"""
+from __future__ import annotations
+
 import math
+
+import airsim
+import cv2
+import gymnasium as gym
+import numpy as np
+from gymnasium import spaces
+
+from src.environments.rewards import RewardFunction
 
 
 class AirSimDroneEnv(gym.Env):
-    """
-    Gymnasium interface for AirSim Quadrotor RL training.
-
-    Observation (Dict):
-        - image: Depth (H, W, 1) normalised to [0, 1]
-        - velocity: [vx, vy, yaw_rate] in body frame
-
-    Action (Box[-1, 1]):
-        - [target_vx, target_vy, target_yaw_rate] scaled to physical limits
-
-    Uses simContinueForTime for lockstep simulation stepping (no wall-clock
-    sleeps) and moveByVelocityZBodyFrameAsync for active altitude hold.
-    """
 
     metadata = {"render_modes": ["human"]}
     MAX_RESET_RETRIES = 5
@@ -30,6 +34,7 @@ class AirSimDroneEnv(gym.Env):
         cfg = cfg or {}
         env_cfg = cfg.get("env", {})
         reward_cfg = cfg.get("reward", {})
+        self._dr_cfg = cfg.get("domain_randomization", {})
 
         self.ip = env_cfg.get("ip", "")
         self.image_shape = tuple(env_cfg.get("image_shape", [84, 84, 1]))
@@ -39,11 +44,10 @@ class AirSimDroneEnv(gym.Env):
         self.max_yaw_rate = np.deg2rad(env_cfg.get("max_yaw_rate_deg", 45))
         self.dt = env_cfg.get("dt", 0.1)
         self.max_steps = env_cfg.get("max_steps", 1024)
+        self.depth_clip_m = env_cfg.get("depth_clip_m", 20.0)
 
-        # Reward weights
-        self.w_progress = reward_cfg.get("w_progress", 0.5)
-        self.w_collision = reward_cfg.get("w_collision", -100.0)
-        self.w_smoothness = reward_cfg.get("w_smoothness", -0.1)
+        # Pluggable reward
+        self.reward_fn = RewardFunction(reward_cfg)
 
         # AirSim client
         self.client = airsim.MultirotorClient(ip=self.ip)
@@ -72,23 +76,49 @@ class AirSimDroneEnv(gym.Env):
         self.step_count = 0
 
     # ------------------------------------------------------------------
+    # Domain Randomization
+    # ------------------------------------------------------------------
+    def _apply_domain_randomization(self):
+        """Apply domain randomization on episode reset.
+
+        Hooks for sensor noise, lighting, and texture variation.
+        Controlled via `domain_randomization` key in config YAML.
+        """
+        if not self._dr_cfg.get("enabled", False):
+            return
+
+        # Depth noise: Gaussian noise injected in _get_obs instead
+        # (enabled per-step, configured here)
+        self._depth_noise_std = self._dr_cfg.get("depth_noise_std", 0.0)
+
+    # ------------------------------------------------------------------
     # Observation
     # ------------------------------------------------------------------
-    def _get_obs(self):
-        # Depth image
+    def _get_depth_image(self) -> np.ndarray:
+        """Capture and process depth image from AirSim."""
         responses = self.client.simGetImages([
             airsim.ImageRequest("0", airsim.ImageType.DepthPerspective, True, False)
         ])
-        if responses:
-            img1d = np.array(responses[0].image_data_float, dtype=np.float32)
-            img1d = img1d.reshape(responses[0].height, responses[0].width)
-            img_depth = cv2.resize(img1d, (self.image_shape[1], self.image_shape[0]))
-            img_depth = np.clip(img_depth, 0, 20) / 20.0
-            if len(self.image_shape) == 3:
-                img_depth = np.expand_dims(img_depth, axis=-1)
-            self.state["image"] = img_depth
+        if not responses:
+            return np.zeros(self.image_shape, dtype=np.float32)
 
-        # Body-frame velocity
+        img1d = np.array(responses[0].image_data_float, dtype=np.float32)
+        img1d = img1d.reshape(responses[0].height, responses[0].width)
+        img_depth = cv2.resize(img1d, (self.image_shape[1], self.image_shape[0]))
+        img_depth = np.clip(img_depth, 0, self.depth_clip_m) / self.depth_clip_m
+
+        # Domain randomization: sensor noise
+        if hasattr(self, "_depth_noise_std") and self._depth_noise_std > 0:
+            noise = self.np_random.normal(0, self._depth_noise_std, img_depth.shape)
+            img_depth = np.clip(img_depth + noise, 0.0, 1.0).astype(np.float32)
+
+        if len(self.image_shape) == 3:
+            img_depth = np.expand_dims(img_depth, axis=-1)
+
+        return img_depth
+
+    def _get_body_velocity(self) -> np.ndarray:
+        """Get body-frame velocity [vx, vy, yaw_rate]."""
         kin = self.client.getMultirotorState().kinematics_estimated
         v_global = np.array([
             kin.linear_velocity.x_val,
@@ -100,12 +130,15 @@ class AirSimDroneEnv(gym.Env):
         R_yaw = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
         v_body = R_yaw @ v_global
 
-        self.state["velocity"] = np.array([
+        return np.array([
             v_body[0],
             v_body[1],
             kin.angular_velocity.z_val,
         ], dtype=np.float32)
 
+    def _get_obs(self) -> dict:
+        self.state["image"] = self._get_depth_image()
+        self.state["velocity"] = self._get_body_velocity()
         return self.state
 
     # ------------------------------------------------------------------
@@ -124,7 +157,6 @@ class AirSimDroneEnv(gym.Env):
             if not self.client.simGetCollisionInfo().has_collided:
                 break
 
-            # Collision on spawn — teleport to a safe pose and retry
             self.client.simSetVehiclePose(
                 airsim.Pose(
                     airsim.Vector3r(0, 0, -self.target_alt),
@@ -133,13 +165,14 @@ class AirSimDroneEnv(gym.Env):
                 ignore_collision=True,
             )
 
+        self._apply_domain_randomization()
         self.prev_action = np.zeros(3, dtype=np.float32)
         self.step_count = 0
 
         return self._get_obs(), {}
 
     # ------------------------------------------------------------------
-    # Step  (lockstep: fire command → advance sim by dt → read state)
+    # Step  (lockstep: fire command -> advance sim by dt -> read state)
     # ------------------------------------------------------------------
     def step(self, action):
         action = np.clip(action, -1.0, 1.0).astype(np.float32)
@@ -148,7 +181,6 @@ class AirSimDroneEnv(gym.Env):
         target_vy = action[1] * self.max_vy
         target_yaw_rate = action[2] * self.max_yaw_rate
 
-        # Fire-and-forget velocity command (do NOT .join())
         self.client.moveByVelocityZBodyFrameAsync(
             float(target_vx),
             float(target_vy),
@@ -160,34 +192,25 @@ class AirSimDroneEnv(gym.Env):
             ),
         )
 
-        # Advance simulation exactly dt seconds (lockstep)
         self.client.simContinueForTime(self.dt)
-        # simContinueForTime is non-blocking; simPause to wait for it
         self.client.simPause(True)
 
         obs = self._get_obs()
         self.step_count += 1
 
-        # --- Reward ---
+        # Reward via pluggable function
         vx_body = obs["velocity"][0]
-        r_progress = self.w_progress * vx_body
-
         has_collided = self.client.simGetCollisionInfo().has_collided
-        r_collision = self.w_collision if has_collided else 0.0
-
-        action_delta = np.linalg.norm(action - self.prev_action)
-        r_smoothness = self.w_smoothness * action_delta
-
-        reward = r_progress + r_collision + r_smoothness
+        reward, reward_info = self.reward_fn(
+            vx_body, has_collided, action, self.prev_action
+        )
         self.prev_action = action.copy()
 
         terminated = has_collided
         truncated = self.step_count >= self.max_steps
 
         info = {
-            "r_progress": r_progress,
-            "r_collision": r_collision,
-            "r_smoothness": r_smoothness,
+            **reward_info,
             "vx_body": vx_body,
             "step_count": self.step_count,
         }

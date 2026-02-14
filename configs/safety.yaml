@@ -1,0 +1,10 @@
+# Safety monitor configuration
+# Used by src.safety.monitor.SafetyMonitor
+
+max_vx: 3.0
+max_vy: 1.0
+max_yaw_rate_deg: 45.0
+proximity_threshold_m: 1.5
+proximity_scale_min: 0.2
+altitude_tolerance_m: 1.0
+comms_timeout_ms: 500.0
