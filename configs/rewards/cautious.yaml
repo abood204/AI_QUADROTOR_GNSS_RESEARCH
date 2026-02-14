@@ -1,0 +1,6 @@
+# Cautious reward — prioritize collision avoidance
+# Hypothesis: stronger collision penalty + smoothness encourages safe paths
+
+w_progress: 0.3        # Reduced — still reward forward but less aggressively
+w_collision: -200.0    # 2x default — heavily penalize collisions
+w_smoothness: -0.2     # 2x default — penalize jerky avoidance maneuvers

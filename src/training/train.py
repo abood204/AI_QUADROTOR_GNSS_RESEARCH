@@ -18,6 +18,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 from src.environments.airsim_env import AirSimDroneEnv
 from src.training.callbacks import RewardLoggingCallback
+from src.training.env_scheduler import EnvironmentScheduler
 
 
 def make_env(cfg: dict):
@@ -37,10 +38,24 @@ def main():
         "--total_timesteps", type=int, default=None,
         help="Override total_timesteps from config",
     )
+    parser.add_argument(
+        "--reward_config", type=str, default=None,
+        help="Override reward weights from a separate YAML (e.g. configs/rewards/aggressive.yaml)",
+    )
+    parser.add_argument(
+        "--run_name", type=str, default=None,
+        help="Custom run name (default: ppo_TIMESTAMP)",
+    )
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
+
+    # Override reward weights if separate reward config provided
+    if args.reward_config:
+        with open(args.reward_config, "r") as f:
+            reward_override = yaml.safe_load(f)
+        cfg.setdefault("reward", {}).update(reward_override)
 
     ppo_cfg = cfg["ppo"]
     out_cfg = cfg["output"]
@@ -50,7 +65,8 @@ def main():
 
     # Timestamped run directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(out_cfg["log_dir"], f"ppo_{timestamp}")
+    run_name = args.run_name or f"ppo_{timestamp}"
+    run_dir = os.path.join(out_cfg["log_dir"], run_name)
     ckpt_dir = os.path.join(run_dir, "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
 
@@ -99,11 +115,25 @@ def main():
     print(f"[train_ppo] Total timesteps: {total_timesteps}")
 
     reward_cb = RewardLoggingCallback()
+    callbacks = [checkpoint_cb, eval_cb, reward_cb]
+
+    # Multi-environment rotation
+    multi_env_cfg = cfg.get("multi_env", {})
+    if multi_env_cfg.get("enabled", False):
+        env_config_paths = multi_env_cfg.get("configs", [])
+        rotate_every = multi_env_cfg.get("rotate_every_episodes", 50)
+        if env_config_paths:
+            env_scheduler = EnvironmentScheduler.from_config_paths(
+                env_config_paths, rotate_every_episodes=rotate_every
+            )
+            callbacks.append(env_scheduler)
+            print(f"[train_ppo] Multi-env rotation ENABLED ({len(env_config_paths)} configs, "
+                  f"rotate every {rotate_every} episodes)")
 
     try:
         model.learn(
             total_timesteps=total_timesteps,
-            callback=[checkpoint_cb, eval_cb, reward_cb],
+            callback=callbacks,
         )
     except KeyboardInterrupt:
         print("\n[train_ppo] Training interrupted by user.")

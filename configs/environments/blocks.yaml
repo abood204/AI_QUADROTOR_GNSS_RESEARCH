@@ -1,0 +1,17 @@
+# Blocks (Indoor) environment configuration
+# Tight indoor corridors — tests close-range obstacle avoidance
+
+env:
+  ip: ""
+  image_shape: [84, 84, 1]
+  target_alt: 2.0             # Lower ceiling in indoor env
+  max_vx: 2.0                 # Slower for tight spaces
+  max_vy: 0.8
+  max_yaw_rate_deg: 60        # More agile turning
+  dt: 0.1
+  max_steps: 512              # Shorter episodes (smaller space)
+  depth_clip_m: 10.0          # Closer obstacles
+
+domain_randomization:
+  enabled: false
+  depth_noise_std: 0.0

@@ -81,15 +81,28 @@ class AirSimDroneEnv(gym.Env):
     def _apply_domain_randomization(self):
         """Apply domain randomization on episode reset.
 
-        Hooks for sensor noise, lighting, and texture variation.
+        Hooks for sensor noise, spawn position, and future texture variation.
         Controlled via `domain_randomization` key in config YAML.
         """
         if not self._dr_cfg.get("enabled", False):
             return
 
-        # Depth noise: Gaussian noise injected in _get_obs instead
-        # (enabled per-step, configured here)
+        # Depth noise: Gaussian noise injected per-step in _get_depth_image
         self._depth_noise_std = self._dr_cfg.get("depth_noise_std", 0.0)
+
+        # Spawn position randomization
+        spawn_radius = self._dr_cfg.get("spawn_radius_m", 0.0)
+        if spawn_radius > 0:
+            dx = float(self.np_random.uniform(-spawn_radius, spawn_radius))
+            dy = float(self.np_random.uniform(-spawn_radius, spawn_radius))
+            random_yaw = float(self.np_random.uniform(-math.pi, math.pi))
+            self.client.simSetVehiclePose(
+                airsim.Pose(
+                    airsim.Vector3r(dx, dy, -self.target_alt),
+                    airsim.to_quaternion(0, 0, random_yaw),
+                ),
+                ignore_collision=True,
+            )
 
     # ------------------------------------------------------------------
     # Observation

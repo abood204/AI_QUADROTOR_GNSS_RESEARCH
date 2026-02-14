@@ -1,0 +1,6 @@
+# Aggressive reward — prioritize fast forward progress
+# Hypothesis: higher progress weight encourages faster exploration
+
+w_progress: 1.0        # 2x default — strongly reward forward motion
+w_collision: -100.0    # Same terminal penalty
+w_smoothness: -0.05    # Half default — tolerate more jerk for speed
