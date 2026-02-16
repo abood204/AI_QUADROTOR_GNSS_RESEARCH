@@ -46,6 +46,10 @@ def main():
         "--run_name", type=str, default=None,
         help="Custom run name (default: ppo_TIMESTAMP)",
     )
+    parser.add_argument(
+        "--resume", type=str, default=None,
+        help="Path to checkpoint .zip to resume training from",
+    )
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
@@ -94,22 +98,30 @@ def main():
     )
 
     # --- Model ---
-    model = PPO(
-        policy="MultiInputPolicy",
-        env=train_env,
-        learning_rate=ppo_cfg["learning_rate"],
-        n_steps=ppo_cfg["n_steps"],
-        batch_size=ppo_cfg["batch_size"],
-        n_epochs=ppo_cfg["n_epochs"],
-        gamma=ppo_cfg["gamma"],
-        gae_lambda=ppo_cfg["gae_lambda"],
-        clip_range=ppo_cfg["clip_range"],
-        ent_coef=ppo_cfg["ent_coef"],
-        vf_coef=ppo_cfg["vf_coef"],
-        max_grad_norm=ppo_cfg["max_grad_norm"],
-        tensorboard_log=run_dir,
-        verbose=1,
-    )
+    if args.resume:
+        print(f"[train_ppo] Resuming from checkpoint: {args.resume}")
+        model = PPO.load(
+            args.resume,
+            env=train_env,
+            tensorboard_log=run_dir,
+        )
+    else:
+        model = PPO(
+            policy="MultiInputPolicy",
+            env=train_env,
+            learning_rate=ppo_cfg["learning_rate"],
+            n_steps=ppo_cfg["n_steps"],
+            batch_size=ppo_cfg["batch_size"],
+            n_epochs=ppo_cfg["n_epochs"],
+            gamma=ppo_cfg["gamma"],
+            gae_lambda=ppo_cfg["gae_lambda"],
+            clip_range=ppo_cfg["clip_range"],
+            ent_coef=ppo_cfg["ent_coef"],
+            vf_coef=ppo_cfg["vf_coef"],
+            max_grad_norm=ppo_cfg["max_grad_norm"],
+            tensorboard_log=run_dir,
+            verbose=1,
+        )
 
     print(f"[train_ppo] Run directory: {run_dir}")
     print(f"[train_ppo] Total timesteps: {total_timesteps}")
@@ -134,6 +146,7 @@ def main():
         model.learn(
             total_timesteps=total_timesteps,
             callback=callbacks,
+            reset_num_timesteps=not bool(args.resume),
         )
     except KeyboardInterrupt:
         print("\n[train_ppo] Training interrupted by user.")
