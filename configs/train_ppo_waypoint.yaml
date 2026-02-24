@@ -1,0 +1,50 @@
+# Waypoint Navigation PPO Configuration
+# Full autonomous navigation: goal-directed multi-waypoint with obstacle avoidance
+# Usage: python -m src.training.train --config configs/train_ppo_waypoint.yaml
+
+env:
+  ip: ""                       # AirSim IP (empty = localhost)
+  image_shape: [84, 84, 1]    # Depth image dimensions (H, W, C)
+  target_alt: 3.0              # Altitude hold in meters (NED: sent as -3.0)
+  max_vx: 3.0                  # Max forward velocity (m/s)
+  max_vy: 1.0                  # Max lateral velocity (m/s)
+  max_yaw_rate_deg: 60         # Up from 45 — 360° turning needs faster yaw
+  dt: 0.1                      # Control loop period (10 Hz)
+  max_steps: 2048              # Longer — 3 waypoints at 30m each needs room
+
+  # Goal navigation settings
+  goal_navigation: true
+  num_waypoints: 3
+  goal_radius_m: 3.0
+  max_goal_dist_m: 30.0
+  waypoint_arena_half_m: 20.0
+
+reward:
+  w_heading: 0.3               # cos(bearing_to_goal) — continuous 360° gradient
+  w_dist: 0.5                  # delta-based distance shaping — penalises hovering
+  w_goal: 10.0                 # per-waypoint arrival bonus
+  w_mission: 50.0              # all-waypoints completion bonus (half a collision penalty)
+  w_collision: -100.0          # terminal collision penalty
+  w_smoothness: -0.1           # penalty for action jerk ||a_t - a_{t-1}||
+
+ppo:
+  learning_rate: 3.0e-4
+  n_steps: 2048                # Steps per rollout
+  batch_size: 64
+  n_epochs: 10
+  gamma: 0.995                 # Higher — mission bonus must reach 300+ steps back
+  gae_lambda: 0.95
+  clip_range: 0.2
+  ent_coef: 0.02               # Slightly higher — encourages directional exploration
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  total_timesteps: 1000000
+
+frame_stack: 4                 # Temporal frame stacking
+
+output:
+  log_dir: "logs/ppo"
+  checkpoint_dir: "models/rl"
+  checkpoint_freq: 10000       # Save every N steps — critical on ephemeral cloud VMs
+  eval_freq: 5000
+  eval_episodes: 5

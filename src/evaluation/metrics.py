@@ -87,16 +87,35 @@ def survival_time(trajectory: list[dict], dt: float = 0.1) -> float:
     return len(trajectory) * dt
 
 
+def goal_completion_rate(episodes: list[dict]) -> float:
+    """Fraction of waypoints reached across all episodes.
+
+    Args:
+        episodes: list of episode summary dicts with 'goals_reached' and
+                  'total_goals' int keys (added by waypoint evaluation).
+                  Episodes without these keys contribute 0 numerator/denominator.
+    """
+    total_reached = sum(ep.get("goals_reached_count", 0) for ep in episodes)
+    total_spawned = sum(ep.get("total_goals_count", 0) for ep in episodes)
+    if total_spawned == 0:
+        return 0.0
+    return total_reached / total_spawned
+
+
 def compute_episode_summary(
     trajectory: list[dict],
     dt: float = 0.1,
     collided: bool = False,
+    goals_reached_count: int = 0,
+    total_goals_count: int = 0,
+    mission_success_flag: bool = False,
 ) -> dict:
     """Compute all metrics for a single episode.
 
+    Backward-compatible: existing callers without waypoint args are unaffected.
     Returns a dict suitable for JSON serialization.
     """
-    return {
+    summary = {
         "distance_before_collision_m": round(distance_before_collision(trajectory), 2),
         "average_speed_ms": round(average_speed(trajectory, dt), 3),
         "path_smoothness_jerk": round(path_smoothness(trajectory, dt), 3),
@@ -104,3 +123,9 @@ def compute_episode_summary(
         "collided": collided,
         "total_steps": len(trajectory),
     }
+    # Waypoint metrics — only included when goal navigation is active
+    if total_goals_count > 0:
+        summary["goals_reached_count"] = goals_reached_count
+        summary["total_goals_count"] = total_goals_count
+        summary["mission_success"] = mission_success_flag
+    return summary

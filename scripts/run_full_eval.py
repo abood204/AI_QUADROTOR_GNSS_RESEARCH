@@ -25,7 +25,7 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 
 from src.environments.airsim_env import AirSimDroneEnv
-from src.evaluation.metrics import compute_episode_summary
+from src.evaluation.metrics import compute_episode_summary, goal_completion_rate
 
 
 def make_env(cfg: dict):
@@ -39,6 +39,9 @@ def run_episode(model, vec_env, client, dt, max_steps, seed=None):
     obs = vec_env.reset()
     trajectory = []
     collided = False
+    goals_reached = 0
+    total_goals = 0
+    mission_success = False
 
     for step in range(max_steps):
         action, _ = model.predict(obs, deterministic=True)
@@ -61,9 +64,21 @@ def run_episode(model, vec_env, client, dt, max_steps, seed=None):
         if done[0]:
             if info.get("r_collision", 0.0) < 0:
                 collided = True
+            # Collect waypoint metrics if goal navigation is active
+            if "goals_reached" in info:
+                goals_reached = info["goals_reached"]
+                total_goals = info["total_goals"]
+                mission_success = info.get("mission_success", False)
             break
 
-    summary = compute_episode_summary(trajectory, dt=dt, collided=collided)
+    summary = compute_episode_summary(
+        trajectory,
+        dt=dt,
+        collided=collided,
+        goals_reached_count=goals_reached,
+        total_goals_count=total_goals,
+        mission_success_flag=mission_success,
+    )
     return trajectory, summary
 
 
@@ -130,6 +145,19 @@ def main():
     avg_speed = np.mean([s["average_speed_ms"] for s in all_summaries])
     avg_smoothness = np.mean([s["path_smoothness_jerk"] for s in all_summaries])
 
+    # Waypoint metrics (only populated if goal_navigation is active)
+    gcr = goal_completion_rate(all_summaries)
+    waypoint_episodes = [s for s in all_summaries if "total_goals_count" in s]
+    avg_goals_per_ep = (
+        np.mean([s["goals_reached_count"] for s in waypoint_episodes])
+        if waypoint_episodes else 0.0
+    )
+    mission_success_rate = (
+        sum(1 for s in waypoint_episodes if s.get("mission_success", False))
+        / len(waypoint_episodes)
+        if waypoint_episodes else 0.0
+    )
+
     # Identify worst episodes by DBC
     sorted_eps = sorted(all_summaries, key=lambda s: s["distance_before_collision_m"])
     worst_episodes = sorted_eps[:args.worst_k]
@@ -157,6 +185,12 @@ def main():
         "worst_episodes": failure_analysis,
         "episode_summaries": all_summaries,
     }
+    if waypoint_episodes:
+        aggregate.update({
+            "goal_completion_rate": round(float(gcr), 3),
+            "avg_goals_per_episode": round(float(avg_goals_per_ep), 2),
+            "mission_success_rate": round(float(mission_success_rate), 3),
+        })
 
     json_path = os.path.join(out_dir, "eval_summary.json")
     with open(json_path, "w") as f:
@@ -188,6 +222,10 @@ def main():
     print(f"  Collision rate:    {col_rate:.1%}")
     print(f"  Avg speed:         {avg_speed:.2f} m/s")
     print(f"  Avg smoothness:    {avg_smoothness:.3f}")
+    if waypoint_episodes:
+        print(f"  Goal completion:   {gcr:.1%}")
+        print(f"  Avg goals/ep:      {avg_goals_per_ep:.2f}")
+        print(f"  Mission success:   {mission_success_rate:.1%}")
     print(f"\n  Worst {args.worst_k} episodes:")
     for fa in failure_analysis:
         print(f"    Ep {fa['episode']}: DBC={fa['dbc_m']:.1f}m  ({fa['category']})")

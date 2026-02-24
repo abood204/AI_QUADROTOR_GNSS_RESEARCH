@@ -21,6 +21,15 @@ from src.training.callbacks import RewardLoggingCallback
 from src.training.env_scheduler import EnvironmentScheduler
 
 
+def _deep_merge(base: dict, override: dict) -> None:
+    """Recursively merge override into base in-place."""
+    for key, val in override.items():
+        if isinstance(val, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], val)
+        else:
+            base[key] = val
+
+
 def make_env(cfg: dict):
     """Return a factory that creates a Monitored AirSimDroneEnv."""
     def _init():
@@ -50,10 +59,19 @@ def main():
         "--resume", type=str, default=None,
         help="Path to checkpoint .zip to resume training from",
     )
+    parser.add_argument(
+        "--overrides", type=str, default=None,
+        help="JSON string of config overrides, e.g. '{\"reward\":{\"w_dist\":0.0}}'",
+    )
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
+
+    # Apply JSON overrides (highest priority — applied before reward_config)
+    if args.overrides:
+        import json
+        _deep_merge(cfg, json.loads(args.overrides))
 
     # Override reward weights if separate reward config provided
     if args.reward_config:

@@ -1,0 +1,10 @@
+# Waypoint reward weights — standalone for use with --reward_config flag
+# Usage: python -m src.training.train --config configs/train_ppo_waypoint.yaml \
+#               --reward_config configs/rewards/waypoint.yaml
+
+w_heading: 0.3
+w_dist: 0.5
+w_goal: 10.0
+w_mission: 50.0
+w_collision: -100.0
+w_smoothness: -0.1

@@ -17,19 +17,20 @@ class RewardLoggingCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         for info in self.locals.get("infos", []):
-            if "r_progress" in info:
-                self._episode_rewards.append({
-                    "r_progress": info["r_progress"],
-                    "r_collision": info["r_collision"],
-                    "r_smoothness": info["r_smoothness"],
-                })
+            reward_entry = {k: v for k, v in info.items() if k.startswith("r_")}
+            if reward_entry:
+                self._episode_rewards.append(reward_entry)
         return True
 
     def _on_rollout_end(self) -> None:
         if not self._episode_rewards:
             return
         n = len(self._episode_rewards)
-        for key in ("r_progress", "r_collision", "r_smoothness"):
-            avg = sum(d[key] for d in self._episode_rewards) / n
+        # Collect all reward keys seen across steps
+        all_keys: set[str] = set()
+        for d in self._episode_rewards:
+            all_keys.update(d.keys())
+        for key in sorted(all_keys):
+            avg = sum(d.get(key, 0.0) for d in self._episode_rewards) / n
             self.logger.record(f"reward/{key}", avg)
         self._episode_rewards.clear()
