@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import copy
 import os
 from datetime import datetime
 
@@ -14,7 +15,7 @@ import yaml
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack
 
 from src.environments.airsim_env import AirSimDroneEnv
 from src.training.callbacks import RewardLoggingCallback
@@ -30,11 +31,34 @@ def _deep_merge(base: dict, override: dict) -> None:
             base[key] = val
 
 
-def make_env(cfg: dict):
-    """Return a factory that creates a Monitored AirSimDroneEnv."""
+def make_env(cfg: dict, port: int | None = None):
+    """Return a factory that creates a Monitored AirSimDroneEnv.
+
+    If port is given, override the env.port in a deep-copied config so
+    each subprocess gets its own AirSim instance.
+    """
+    if port is not None:
+        cfg = copy.deepcopy(cfg)
+        cfg.setdefault("env", {})["port"] = port
+
     def _init():
         return Monitor(AirSimDroneEnv(cfg))
     return _init
+
+
+def make_vec_env(cfg: dict, num_envs: int, base_port: int):
+    """Create a vectorized environment with N parallel AirSim instances.
+
+    - num_envs=1: DummyVecEnv (single process, backward compatible)
+    - num_envs>1: SubprocVecEnv (each env on base_port + i)
+
+    Uses start_method="spawn" for SubprocVecEnv to avoid CUDA fork issues.
+    """
+    if num_envs == 1:
+        return DummyVecEnv([make_env(cfg, port=base_port)])
+
+    env_fns = [make_env(cfg, port=base_port + i) for i in range(num_envs)]
+    return SubprocVecEnv(env_fns, start_method="spawn")
 
 
 def main():
@@ -62,6 +86,14 @@ def main():
     parser.add_argument(
         "--overrides", type=str, default=None,
         help="JSON string of config overrides, e.g. '{\"reward\":{\"w_dist\":0.0}}'",
+    )
+    parser.add_argument(
+        "--num_envs", type=int, default=1,
+        help="Number of parallel AirSim environments (each on its own port)",
+    )
+    parser.add_argument(
+        "--base_port", type=int, default=41451,
+        help="Base API port for AirSim instances (env i uses base_port + i)",
     )
     args = parser.parse_args()
 
@@ -93,11 +125,15 @@ def main():
     os.makedirs(ckpt_dir, exist_ok=True)
 
     # --- Environments ---
-    # Single AirSim instance => DummyVecEnv (not SubprocVecEnv)
-    train_env = DummyVecEnv([make_env(cfg)])
+    num_envs = args.num_envs
+    base_port = args.base_port
+
+    train_env = make_vec_env(cfg, num_envs=num_envs, base_port=base_port)
     train_env = VecFrameStack(train_env, n_stack=frame_stack, channels_order="last")
 
-    eval_env = DummyVecEnv([make_env(cfg)])
+    # Eval env gets a dedicated port after all train envs
+    eval_port = base_port + num_envs
+    eval_env = make_vec_env(cfg, num_envs=1, base_port=eval_port)
     eval_env = VecFrameStack(eval_env, n_stack=frame_stack, channels_order="last")
 
     # --- Callbacks ---
@@ -143,6 +179,8 @@ def main():
 
     print(f"[train_ppo] Run directory: {run_dir}")
     print(f"[train_ppo] Total timesteps: {total_timesteps}")
+    print(f"[train_ppo] Parallel envs: {num_envs} (ports {base_port}–{base_port + num_envs - 1},"
+          f" eval on {eval_port})")
 
     reward_cb = RewardLoggingCallback()
     callbacks = [checkpoint_cb, eval_cb, reward_cb]

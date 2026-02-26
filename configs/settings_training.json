@@ -1,8 +1,10 @@
 {
   "SeeDocsAt": "https://github.com/Microsoft/AirSim/blob/main/docs/settings.md",
   "SettingsVersion": 1.2,
+  "ApiServerPort": 41451,
   "SimMode": "Multirotor",
   "ViewMode": "FlyWithMe",
+  "SubWindows": [],
   "Vehicles": {
     "Drone1": {
       "VehicleType": "SimpleFlight",

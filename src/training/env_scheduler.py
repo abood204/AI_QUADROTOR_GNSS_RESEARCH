@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import yaml
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 
 class EnvironmentScheduler(BaseCallback):
@@ -69,20 +70,26 @@ class EnvironmentScheduler(BaseCallback):
                         print(f"[env_scheduler] Episode {self._episode_count}: "
                               f"rotating to config {self._current_idx}")
 
-                    # Update the underlying env's config parameters
+                    # Update the underlying env's config parameters.
+                    # Unwrap VecFrameStack (or any outer wrapper) to
+                    # reach DummyVecEnv / SubprocVecEnv.
                     vec_env = self.training_env
-                    if hasattr(vec_env, "envs"):
+                    while hasattr(vec_env, "venv"):
+                        vec_env = vec_env.venv
+
+                    env_cfg = new_cfg.get("env", {})
+
+                    if isinstance(vec_env, SubprocVecEnv):
+                        # SubprocVecEnv: call update_config inside each
+                        # subprocess via the method added to AirSimDroneEnv.
+                        vec_env.env_method("update_config", env_cfg)
+                    elif hasattr(vec_env, "envs"):
+                        # DummyVecEnv: direct attribute access
                         for env_wrapper in vec_env.envs:
                             raw = env_wrapper
-                            # Unwrap Monitor if needed
                             while hasattr(raw, "env"):
                                 raw = raw.env
-                            if hasattr(raw, "max_vx"):
-                                env_cfg = new_cfg.get("env", {})
-                                raw.max_vx = env_cfg.get("max_vx", raw.max_vx)
-                                raw.max_vy = env_cfg.get("max_vy", raw.max_vy)
-                                raw.target_alt = env_cfg.get("target_alt", raw.target_alt)
-                                raw.max_steps = env_cfg.get("max_steps", raw.max_steps)
-                                raw.depth_clip_m = env_cfg.get("depth_clip_m", raw.depth_clip_m)
+                            if hasattr(raw, "update_config"):
+                                raw.update_config(env_cfg)
 
         return True

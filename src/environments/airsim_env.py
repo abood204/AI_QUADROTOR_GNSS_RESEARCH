@@ -38,6 +38,7 @@ class AirSimDroneEnv(gym.Env):
         self._dr_cfg = cfg.get("domain_randomization", {})
 
         self.ip = env_cfg.get("ip", "")
+        self.port = env_cfg.get("port", 41451)
         self.image_shape = tuple(env_cfg.get("image_shape", [84, 84, 1]))
         self.target_alt = env_cfg.get("target_alt", 3.0)
         self.max_vx = env_cfg.get("max_vx", 3.0)
@@ -61,7 +62,7 @@ class AirSimDroneEnv(gym.Env):
             self.reward_fn = RewardFunction(reward_cfg)
 
         # AirSim client
-        self.client = airsim.MultirotorClient(ip=self.ip)
+        self.client = airsim.MultirotorClient(ip=self.ip, port=self.port)
         self.client.confirmConnection()
 
         # Velocity observation dimension: 3 (baseline) or 6 (goal navigation)
@@ -95,6 +96,22 @@ class AirSimDroneEnv(gym.Env):
         self._waypoint_queue: list[tuple[float, float]] = []
         self._goals_reached_this_episode = 0
         self._total_goals_this_episode = 0
+
+    # ------------------------------------------------------------------
+    # Config update (for EnvironmentScheduler with SubprocVecEnv)
+    # ------------------------------------------------------------------
+    def update_config(self, env_cfg: dict) -> None:
+        """Update mutable env parameters from a new config dict.
+
+        Called by EnvironmentScheduler via env_method() for SubprocVecEnv
+        compatibility. Only updates parameters that make sense to change
+        between episodes (not port/ip/image_shape).
+        """
+        self.max_vx = env_cfg.get("max_vx", self.max_vx)
+        self.max_vy = env_cfg.get("max_vy", self.max_vy)
+        self.target_alt = env_cfg.get("target_alt", self.target_alt)
+        self.max_steps = env_cfg.get("max_steps", self.max_steps)
+        self.depth_clip_m = env_cfg.get("depth_clip_m", self.depth_clip_m)
 
     # ------------------------------------------------------------------
     # Domain Randomization
