@@ -6,6 +6,7 @@ enforcing velocity limits, proximity scaling, and emergency stop.
 Usage:
     python -m src.deployment.deploy --model logs/ppo/best_model/best_model.zip
     python -m src.deployment.deploy --model logs/ppo/best_model/best_model.zip --no_safety
+    python -m src.deployment.deploy --model logs/ppo/best_model/best_model.zip --speed_scale 2.5
 """
 
 import argparse
@@ -72,10 +73,26 @@ def main():
         "--no_safety", action="store_true",
         help="Disable safety monitor (for ablation comparison)",
     )
+    parser.add_argument(
+        "--speed_scale", type=float, default=1.0,
+        help="Multiply max_vx / max_vy / max_yaw_rate by this factor at deploy time. "
+             "1.0 = training speed. 2.0 = double speed. Does not require retraining.",
+    )
     args = parser.parse_args()
 
     with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
+
+    # Scale velocities for deploy without affecting the observation space shape
+    if args.speed_scale != 1.0:
+        env_cfg = cfg.setdefault("env", {})
+        env_cfg["max_vx"] = env_cfg.get("max_vx", 3.0) * args.speed_scale
+        env_cfg["max_vy"] = env_cfg.get("max_vy", 1.0) * args.speed_scale
+        env_cfg["max_yaw_rate_deg"] = env_cfg.get("max_yaw_rate_deg", 45) * args.speed_scale
+        print(f"[deploy] Speed scale: {args.speed_scale}x  "
+              f"(max_vx={env_cfg['max_vx']:.1f} m/s, "
+              f"max_vy={env_cfg['max_vy']:.1f} m/s, "
+              f"yaw={env_cfg['max_yaw_rate_deg']:.0f} deg/s)")
 
     frame_stack = cfg.get("frame_stack", 4)
     dt = cfg.get("env", {}).get("dt", 0.1)
